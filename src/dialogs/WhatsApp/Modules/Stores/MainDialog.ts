@@ -22,18 +22,48 @@ export default class extends ServiceWhatsappBaseDialog implements IDialog {
             await this.findMyNearbyStores()
             return
         }
-        await this.sendLocationRequest(await this.getLocalizationText('share_location_to_me'));
-        await this.conversation.addWaitAction('WaitLocation');
+
+        if(this.activity.value.id == '#STORES') {
+            await this.sendButtonMessage(
+                '🏪 Mağazalarımız'
+                ,''
+                ,'Size en yakın mağazamızı bulmak için hangi işlemi yapmak istersiniz?'
+                ,[
+                    {
+                        'id': '#SHARE_LOCATION',
+                        'title': '📍 Konum Paylaş',
+                    },
+                    {
+                        'id': '#FIND_STORES',
+                        'title': '🔍 İl ilçe seçimi',
+                    }
+                ]
+            );
+        }else if(this.activity.value.id == '#SHARE_LOCATION') {
+            await this.sendLocationRequest(await this.getLocalizationText('share_location_to_me'));
+            await this.conversation.addWaitAction('WaitLocation');
+        }else if(this.activity.value.id == '#FIND_STORES') {
+
+        }
+
 	}
     
     async findMyNearbyStores() {
-        console.log(this.activity.location.latitude, this.activity.location.longitude);
+
+        if(!this.conversation.getCache('latitude')){
+            this.conversation.setCache('latitude', this.activity.location.latitude);
+        }
+
+        if(!this.conversation.getCache('longitude')){
+            this.conversation.setCache('longitude', this.activity.location.longitude);
+        }
+
         const storeLocationsResponse = await this.nebimV3Helper.getStoreLocations();
         const storeLocations = await storeLocationsResponse.json();
         const storesWithDistance = storeLocations.map((store: any) => {
             const distance = haversineDistance(
-                Number(this.activity.location.latitude),
-                Number(this.activity.location.longitude),
+                Number(this.conversation.getCache('latitude')),
+                Number(this.conversation.getCache('longitude')),
                 Number(store.Enlem),
                 Number(store.Boylam)
             );
@@ -42,23 +72,54 @@ export default class extends ServiceWhatsappBaseDialog implements IDialog {
                 distance: distance
             };
         });
+    
+        const validStoresWithDistance = storesWithDistance.filter((store: any) => store.Enlem && store.Boylam);
 
-        storesWithDistance.sort((a: any, b: any) => a.distance - b.distance);
-        await this.sendMessage('İşte size en yakın mağazlarımız');
-
-        await storesWithDistance.slice(0, 5).forEach(async (store: any) => {
-            const sendStore = await this.sendLocationMessage(store.Enlem, store.Boylam, store['Mağaza Adı'], store['Adres']);
-            console.log(sendStore);
-        });
+        validStoresWithDistance.sort((a: any, b: any) => a.distance - b.distance);
         
-        await this.sendMessage('Sizi menüye yönlendiriyorum.');
-        await this.sendMessage('Lütfen bekleyiniz.');
+    
+        let storeCount = this.conversation.getCache('storeCount') || 0;
+        const selection = this.activity.value.id;
         
+        if( selection != '#YES_STORE' && selection != '#NO_STORE') {
+            await this.sendMessage('İşte size en yakın mağazamız');
+            await this.sendLocationMessage(validStoresWithDistance[storeCount].Enlem, validStoresWithDistance[storeCount].Boylam, validStoresWithDistance[storeCount]['Mağaza Adı'], validStoresWithDistance[storeCount]['Adres']);
+           
+        }
+        
+        if (selection == '#YES_STORE') {
+            await this.sendMessage('Sizi menüye yönlendiriyorum.');
+            await this.sendMessage('Lütfen bekleyiniz...');
+            await this.conversation.removeWaitAction();
+            await this.conversation.resetConversation();
+            await this.services.dialog.runWithIntentName(this, 'CXPerium.Dialogs.WhatsApp.WelcomeDialog');
+            return;
+        } else if (selection == '#NO_STORE') {
+            // storeCount değerini artır ve güncelle
+            storeCount += 1;
+            this.conversation.setCache('storeCount', storeCount);
+            await this.sendMessage('Size en yakın bir diğer mağazamız.');
+            
+            console.log(validStoresWithDistance[storeCount].Enlem, validStoresWithDistance[storeCount].Boylam, validStoresWithDistance[storeCount]['Mağaza Adı'], validStoresWithDistance[storeCount]['Adres'])
 
-        await this.conversation.removeWaitAction();
-        await this.conversation.resetConversation();
+            await this.sendLocationMessage(validStoresWithDistance[storeCount].Enlem, validStoresWithDistance[storeCount].Boylam, validStoresWithDistance[storeCount]['Mağaza Adı'], validStoresWithDistance[storeCount]['Adres']);
+          
+        }
 
-        await this.services.dialog.runWithIntentName(this,'CXPerium.Dialogs.WhatsApp.WelcomeDialog');
-
+        await this.sendButtonMessage(
+            'İşlem seçiniz',
+            '',
+            'İlettiğimiz mağaza sizin için yeterli mi?',
+            [
+                {
+                    'id': '#YES_STORE',
+                    'title': '✅ Evet Yeterli',
+                },
+                {
+                    'id': '#NO_STORE',
+                    'title': '⏭️Başka Mağaza Getir',
+                }
+            ]
+        );
     }
 }

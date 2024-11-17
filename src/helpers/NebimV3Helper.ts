@@ -38,4 +38,25 @@ export default class NebimV3Helper extends ServiceWhatsappBaseDialog {
             }
         )
     }
+
+    public async getOrdersByPhoneNumber(phoneNumber: string) {
+        return await fetch (
+            `${NEBIM_INTEGRATOR_URL}/IntegratorService/RunProc/${NEBIM_INTEGRATOR_TOKEN}`,
+            {
+                method: 'POST',
+                headers: { 
+                    'content-type': 'application/json; charset=utf-8',
+                 },
+                body: JSON.stringify({
+                    "ProcName": "sp_RPA_GetOrdersByPhoneNumber",
+                    "Parameters": [
+                        {
+                            "Name": "PhoneNumber",
+                            "Value": phoneNumber
+                        }
+                    ]  
+                })
+            }
+        )    
+    }
 }
